@@ -104,7 +104,13 @@ public class GUIConfirmCancel extends AuctionBaseGUI {
 					EconomyManager.deposit(oldBidder, located.getCurrentPrice());
 
 				if (oldBidder.isOnline())
-					AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(oldBidder))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(located.getCurrentPrice())).sendPrefixedMessage(oldBidder.getPlayer());
+					EconomyManager.getBalance(oldBidder).thenAccept(balance ->
+						AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd")
+								.processPlaceholder("player_balance",
+										AuctionAPI.getInstance().formatNumber(balance))
+								.processPlaceholder("price",
+										AuctionAPI.getInstance().formatNumber(located.getCurrentPrice()))
+								.sendPrefixedMessage(oldBidder.getPlayer()));
 
 			}
 

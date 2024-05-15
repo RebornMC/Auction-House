@@ -227,21 +227,23 @@ public class GUIAuctionHouse extends AbstractPlaceholderGui {
 			return;
 		}
 
-		if (!buyingQuantity)
-			if (!EconomyManager.hasBalance(e.player, auctionItem.getBasePrice())) {
-				AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(e.player);
-				return;
+		EconomyManager.hasBalance(e.player, auctionItem.getBasePrice()).thenAccept(success -> {
+			if (!buyingQuantity)
+				if (!success) {
+					AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(e.player);
+					return;
+				}
+
+			if (buyingQuantity) {
+				if (auctionItem.getBidStartingPrice() <= 0 || !Settings.ALLOW_USAGE_OF_BID_SYSTEM.getBoolean()) {
+					if (!Settings.ALLOW_PURCHASE_OF_SPECIFIC_QUANTITIES.getBoolean()) return;
+				}
 			}
 
-		if (buyingQuantity) {
-			if (auctionItem.getBidStartingPrice() <= 0 || !Settings.ALLOW_USAGE_OF_BID_SYSTEM.getBoolean()) {
-				if (!Settings.ALLOW_PURCHASE_OF_SPECIFIC_QUANTITIES.getBoolean()) return;
-			}
-		}
-
-		cleanup();
-		e.manager.showGUI(e.player, new GUIConfirmPurchase(this.auctionPlayer, auctionItem, buyingQuantity));
-		AuctionHouse.getInstance().getTransactionManager().addPrePurchase(e.player, auctionItem.getId());
+			cleanup();
+			e.manager.showGUI(e.player, new GUIConfirmPurchase(this.auctionPlayer, auctionItem, buyingQuantity));
+			AuctionHouse.getInstance().getTransactionManager().addPrePurchase(e.player, auctionItem.getId());
+		});
 	}
 
 	private void handleBidItem(AuctionedItem auctionItem, GuiClickEvent e, boolean buyNow) {
@@ -327,7 +329,8 @@ public class GUIAuctionHouse extends AbstractPlaceholderGui {
 
 					newBiddingAmount = Settings.ROUND_ALL_PRICES.getBoolean() ? Math.round(newBiddingAmount) : newBiddingAmount;
 
-					if (Settings.PLAYER_NEEDS_TOTAL_PRICE_TO_BID.getBoolean() && !EconomyManager.hasBalance(e.player, newBiddingAmount)) {
+					// TODO: join #2
+					if (Settings.PLAYER_NEEDS_TOTAL_PRICE_TO_BID.getBoolean() && !EconomyManager.hasBalance(e.player, newBiddingAmount).join()) {
 						AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(e.player);
 						AuctionHouse.getInstance().getGuiManager().showGUI(player, new GUIAuctionHouse(GUIAuctionHouse.this.auctionPlayer));
 						return true;
@@ -350,7 +353,8 @@ public class GUIAuctionHouse extends AbstractPlaceholderGui {
 					if (Settings.BIDDING_TAKES_MONEY.getBoolean()) {
 						final double oldBidAmount = auctionItem.getCurrentPrice();
 
-						if (!EconomyManager.hasBalance(e.player, newBiddingAmount)) {
+						// TODO: join #1
+						if (!EconomyManager.hasBalance(e.player, newBiddingAmount).join()) {
 							AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(e.player);
 							return true;
 						}
@@ -371,11 +375,13 @@ public class GUIAuctionHouse extends AbstractPlaceholderGui {
 							else
 								EconomyManager.deposit(oldBidder, oldBidAmount);
 							if (oldBidder.isOnline())
-								AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(oldBidder))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(oldBidAmount)).sendPrefixedMessage(oldBidder.getPlayer());
+								AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd").processPlaceholder("player_balance",
+										AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(oldBidder).join())).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(oldBidAmount)).sendPrefixedMessage(oldBidder.getPlayer());
 						}
 
 						EconomyManager.withdrawBalance(e.player, newBiddingAmount);
-						AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyremove").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(e.player))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(newBiddingAmount)).sendPrefixedMessage(e.player);
+						AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyremove").processPlaceholder("player_balance",
+								AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(e.player).join())).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(newBiddingAmount)).sendPrefixedMessage(e.player);
 
 					}
 
@@ -527,15 +533,24 @@ public class GUIAuctionHouse extends AbstractPlaceholderGui {
 	====================== FIXED BUTTONS ======================
 	 */
 	private void drawVariableButtons() {
-		if (Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_ENABLED.getBoolean()) {
-			setButton(Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_SLOT.getInt(), ConfigurationItemHelper.createConfigurationItem(this.player, Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_ITEM.getString(), Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_NAME.getString(), PlaceholderAPIHook.PAPIReplacer.tryReplace(this.auctionPlayer.getPlayer(), Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_LORE.getStringList()), new HashMap<String, Object>() {{
-				put("%active_player_auctions%", auctionPlayer.getItems(false).size());
-				put("%player_balance%", Settings.USE_SHORT_NUMBERS_ON_PLAYER_BALANCE.getBoolean() ? AuctionAPI.getInstance().getFriendlyNumber(EconomyManager.getBalance(auctionPlayer.getPlayer())) : AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(auctionPlayer.getPlayer())));
-			}}), e -> {
-				cleanup();
-				e.manager.showGUI(e.player, new GUIActiveAuctions(this.auctionPlayer));
-			});
-		}
+		setButton(Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_SLOT.getInt(), ConfigurationItemHelper.createConfigurationItem(this.player, Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_ITEM.getString(), Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_NAME.getString(), PlaceholderAPIHook.PAPIReplacer.tryReplace(this.auctionPlayer.getPlayer(), Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_LORE.getStringList()), new HashMap<String, Object>() {{
+			put("%active_player_auctions%", auctionPlayer.getItems(false).size());
+			put("%player_balance%", "Loading...");
+		}}), e -> {});
+
+		EconomyManager.getBalance(auctionPlayer.getPlayer()).thenAccept(balance -> {
+			if (Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_ENABLED.getBoolean()) {
+				setButton(Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_SLOT.getInt(), ConfigurationItemHelper.createConfigurationItem(this.player, Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_ITEM.getString(), Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_NAME.getString(), PlaceholderAPIHook.PAPIReplacer.tryReplace(this.auctionPlayer.getPlayer(), Settings.GUI_AUCTION_HOUSE_ITEMS_YOUR_AUCTIONS_LORE.getStringList()), new HashMap<String, Object>() {{
+					put("%active_player_auctions%", auctionPlayer.getItems(false).size());
+					put("%player_balance%", Settings.USE_SHORT_NUMBERS_ON_PLAYER_BALANCE.getBoolean() ? AuctionAPI.getInstance()
+							.getFriendlyNumber(balance)
+							: AuctionAPI.getInstance().formatNumber(balance));
+				}}), e -> {
+					cleanup();
+					e.manager.showGUI(e.player, new GUIActiveAuctions(this.auctionPlayer));
+				});
+			}
+		});
 
 		if (Settings.GUI_AUCTION_HOUSE_ITEMS_COLLECTION_BIN_ENABLED.getBoolean()) {
 			setButton(Settings.GUI_AUCTION_HOUSE_ITEMS_COLLECTION_BIN_SLOT.getInt(), ConfigurationItemHelper.createConfigurationItem(this.player, Settings.GUI_AUCTION_HOUSE_ITEMS_COLLECTION_BIN_ITEM.getString(), Settings.GUI_AUCTION_HOUSE_ITEMS_COLLECTION_BIN_NAME.getString(), Settings.GUI_AUCTION_HOUSE_ITEMS_COLLECTION_BIN_LORE.getStringList(), new HashMap<String, Object>() {{

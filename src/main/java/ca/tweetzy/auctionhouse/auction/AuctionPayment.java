@@ -49,7 +49,15 @@ public final class AuctionPayment {
 
 
 	public void pay(Player player) {
-		EconomyManager.deposit(player, this.amount);
-		AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(player))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(this.amount)).sendPrefixedMessage(player);
+		EconomyManager.deposit(player, this.amount)
+			.thenCompose(x -> EconomyManager.getBalance(player))
+			.thenAccept(balance -> AuctionHouse.getInstance()
+					.getLocale().getMessage("pricing.moneyadd")
+					.processPlaceholder("player_balance",
+							AuctionAPI.getInstance().formatNumber(balance))
+					.processPlaceholder("price",
+							AuctionAPI.getInstance().formatNumber(this.amount))
+					.sendPrefixedMessage(player));
+
 	}
 }

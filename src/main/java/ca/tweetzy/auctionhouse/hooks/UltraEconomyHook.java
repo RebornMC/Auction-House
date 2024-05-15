@@ -28,6 +28,8 @@ import me.TechsCode.UltraEconomy.objects.Currency;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 
+import java.util.concurrent.CompletableFuture;
+
 
 /**
  * The current file has been created by Kiran Hart
@@ -61,32 +63,33 @@ public final class UltraEconomyHook extends Economy {
 	}
 
 	@Override
-	public double getBalance(OfflinePlayer player) {
+	public CompletableFuture<Double> getBalance(OfflinePlayer player) {
 		final Account account = UltraEconomy.getInstance().getAccounts().uuid(player.getUniqueId()).orElse(null);
-		return account == null ? 0 : account.getBalance(this.currency).getSum();
+		return CompletableFuture.completedFuture(
+				account == null ? 0 : account.getBalance(this.currency).getSum());
 	}
 
 	@Override
-	public boolean hasBalance(OfflinePlayer player, double cost) {
-		return getBalance(player) >= cost;
+	public CompletableFuture<Boolean> hasBalance(OfflinePlayer player, double cost) {
+		return getBalance(player).thenApply(balance -> balance >= cost);
 	}
 
 	@Override
-	public boolean withdrawBalance(OfflinePlayer player, double cost) {
+	public CompletableFuture<Boolean> withdrawBalance(OfflinePlayer player, double cost) {
 		final Account account = UltraEconomy.getInstance().getAccounts().uuid(player.getUniqueId()).orElse(null);
-		if (account == null) return false;
+		if (account == null) return CompletableFuture.completedFuture(false);
 
 		account.removeBalance(this.currency, cost);
-		return true;
+		return CompletableFuture.completedFuture(true);
 	}
 
 	@Override
-	public boolean deposit(OfflinePlayer player, double amount) {
+	public CompletableFuture<Boolean> deposit(OfflinePlayer player, double amount) {
 		final Account account = UltraEconomy.getInstance().getAccounts().uuid(player.getUniqueId()).orElse(null);
-		if (account == null) return false;
+		if (account == null) return CompletableFuture.completedFuture(false);
 
 		account.addBalance(this.currency, amount);
-		return true;
+		return CompletableFuture.completedFuture(true);
 	}
 
 	@Override

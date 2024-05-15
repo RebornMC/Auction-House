@@ -283,8 +283,13 @@ public class CommandAdmin extends AbstractCommand {
 						EconomyManager.deposit(oldBidder, auctionItem.getCurrentPrice());
 
 					if (oldBidder.isOnline())
-						AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(oldBidder))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(auctionItem.getCurrentPrice())).sendPrefixedMessage(oldBidder.getPlayer());
-
+						EconomyManager.getBalance(oldBidder).thenAccept(balance ->
+							AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd")
+									.processPlaceholder("player_balance",
+											AuctionAPI.getInstance().formatNumber(balance))
+									.processPlaceholder("price",
+											AuctionAPI.getInstance().formatNumber(auctionItem.getCurrentPrice()))
+									.sendPrefixedMessage(oldBidder.getPlayer()));
 				}
 			}
 

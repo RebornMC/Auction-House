@@ -112,92 +112,107 @@ public class GUIConfirmBid extends AuctionUpdatingPagedGUI<AuctionedItem> {
 
 			newBiddingAmount = Settings.ROUND_ALL_PRICES.getBoolean() ? Math.round(newBiddingAmount) : newBiddingAmount;
 
-			if (Settings.PLAYER_NEEDS_TOTAL_PRICE_TO_BID.getBoolean() && !EconomyManager.hasBalance(click.player, newBiddingAmount)) {
-				AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(click.player);
-				return;
-			}
-
-			ItemStack itemStack = auctionItem.getItem();
-
-			OfflinePlayer oldBidder = Bukkit.getOfflinePlayer(auctionItem.getHighestBidder());
-			OfflinePlayer owner = Bukkit.getOfflinePlayer(auctionItem.getOwner());
-
-			AuctionBidEvent auctionBidEvent = new AuctionBidEvent(click.player, auctionItem, newBiddingAmount);
-			Bukkit.getServer().getPluginManager().callEvent(auctionBidEvent);
-			if (auctionBidEvent.isCancelled()) return;
-
-			if (Settings.BIDDING_TAKES_MONEY.getBoolean()) {
-				final double oldBidAmount = auctionItem.getCurrentPrice();
-
-				if (!EconomyManager.hasBalance(click.player, newBiddingAmount)) {
+			double finalNewBiddingAmount = newBiddingAmount;
+			EconomyManager.hasBalance(click.player, newBiddingAmount).thenAccept(success -> {
+				if (Settings.PLAYER_NEEDS_TOTAL_PRICE_TO_BID.getBoolean() && !success) {
 					AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(click.player);
 					return;
 				}
 
-				if (click.player.getUniqueId().equals(owner.getUniqueId()) || oldBidder.getUniqueId().equals(click.player.getUniqueId())) {
-					return;
+				ItemStack itemStack = auctionItem.getItem();
+
+				OfflinePlayer oldBidder = Bukkit.getOfflinePlayer(auctionItem.getHighestBidder());
+				OfflinePlayer owner = Bukkit.getOfflinePlayer(auctionItem.getOwner());
+
+				AuctionBidEvent auctionBidEvent = new AuctionBidEvent(click.player, auctionItem, finalNewBiddingAmount);
+				Bukkit.getServer().getPluginManager().callEvent(auctionBidEvent);
+				if (auctionBidEvent.isCancelled()) return;
+
+				if (Settings.BIDDING_TAKES_MONEY.getBoolean()) {
+					final double oldBidAmount = auctionItem.getCurrentPrice();
+
+					if (!success) {
+						AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(click.player);
+						return;
+					}
+
+					if (click.player.getUniqueId().equals(owner.getUniqueId()) || oldBidder.getUniqueId().equals(click.player.getUniqueId())) {
+						return;
+					}
+
+					if (!auctionItem.getHighestBidder().equals(auctionItem.getOwner())) {
+						if (Settings.STORE_PAYMENTS_FOR_MANUAL_COLLECTION.getBoolean())
+							AuctionHouse.getInstance().getDataManager().insertAuctionPayment(new AuctionPayment(
+									oldBidder.getUniqueId(),
+									oldBidAmount,
+									auctionItem.getItem(),
+									AuctionHouse.getInstance().getLocale().getMessage("general.prefix").getMessage(),
+									PaymentReason.BID_RETURNED
+							), null);
+						else
+							EconomyManager.deposit(oldBidder, oldBidAmount);
+
+						if (oldBidder.isOnline())
+							EconomyManager.getBalance(oldBidder).thenAccept(balance ->
+								AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd")
+										.processPlaceholder("player_balance",
+												AuctionAPI.getInstance().formatNumber(balance))
+										.processPlaceholder("price",
+												AuctionAPI.getInstance().formatNumber(oldBidAmount))
+										.sendPrefixedMessage(oldBidder.getPlayer()));
+					}
+
+
+					EconomyManager.withdrawBalance(click.player, finalNewBiddingAmount);
+					EconomyManager.getBalance(click.player).thenAccept(balance ->
+							AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyremove")
+								.processPlaceholder("player_balance",
+										AuctionAPI.getInstance().formatNumber(balance))
+								.processPlaceholder("price",
+										AuctionAPI.getInstance().formatNumber(finalNewBiddingAmount))
+								.sendPrefixedMessage(click.player));
+
 				}
 
-				if (!auctionItem.getHighestBidder().equals(auctionItem.getOwner())) {
-					if (Settings.STORE_PAYMENTS_FOR_MANUAL_COLLECTION.getBoolean())
-						AuctionHouse.getInstance().getDataManager().insertAuctionPayment(new AuctionPayment(
-								oldBidder.getUniqueId(),
-								oldBidAmount,
-								auctionItem.getItem(),
-								AuctionHouse.getInstance().getLocale().getMessage("general.prefix").getMessage(),
-								PaymentReason.BID_RETURNED
-						), null);
-					else
-						EconomyManager.deposit(oldBidder, oldBidAmount);
-
-					if (oldBidder.isOnline())
-						AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(oldBidder))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(oldBidAmount)).sendPrefixedMessage(oldBidder.getPlayer());
+				auctionItem.setHighestBidder(click.player.getUniqueId());
+				auctionItem.setHighestBidderName(click.player.getName());
+				auctionItem.setCurrentPrice(finalNewBiddingAmount);
+				if (auctionItem.getBasePrice() != -1 && Settings.SYNC_BASE_PRICE_TO_HIGHEST_PRICE.getBoolean() && Settings.ALLOW_USAGE_OF_BUY_NOW_SYSTEM.getBoolean() && auctionItem.getCurrentPrice() > auctionItem.getBasePrice()) {
+					auctionItem.setBasePrice(Settings.ROUND_ALL_PRICES.getBoolean() ? Math.round(auctionItem.getCurrentPrice()) : auctionItem.getCurrentPrice());
 				}
 
+				if (Settings.INCREASE_TIME_ON_BID.getBoolean()) {
+					auctionItem.setExpiresAt(auctionItem.getExpiresAt() + 1000L * Settings.TIME_TO_INCREASE_BY_ON_BID.getInt());
+				}
 
-				EconomyManager.withdrawBalance(click.player, newBiddingAmount);
-				AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyremove").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(click.player))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(newBiddingAmount)).sendPrefixedMessage(click.player);
+				if (Settings.BROADCAST_AUCTION_BID.getBoolean()) {
+					Bukkit.getOnlinePlayers().forEach(player -> AuctionHouse.getInstance().getLocale().getMessage("auction.broadcast.bid")
+							.processPlaceholder("player", click.player.getName())
+							.processPlaceholder("player_displayname", AuctionAPI.getInstance().getDisplayName(click.player))
+							.processPlaceholder("amount", AuctionAPI.getInstance().formatNumber(auctionItem.getCurrentPrice()))
+							.processPlaceholder("item", AuctionAPI.getInstance().getItemName(itemStack))
+							.sendPrefixedMessage(player));
+				}
 
-			}
+				if (oldBidder.isOnline()) {
+					AuctionHouse.getInstance().getLocale().getMessage("auction.outbid")
+							.processPlaceholder("player", click.player.getName())
+							.processPlaceholder("player_displayname", AuctionAPI.getInstance().getDisplayName(click.player))
+							.processPlaceholder("item", AuctionAPI.getInstance().getItemName(itemStack))
+							.sendPrefixedMessage(oldBidder.getPlayer());
+				}
 
-			auctionItem.setHighestBidder(click.player.getUniqueId());
-			auctionItem.setHighestBidderName(click.player.getName());
-			auctionItem.setCurrentPrice(newBiddingAmount);
-			if (auctionItem.getBasePrice() != -1 && Settings.SYNC_BASE_PRICE_TO_HIGHEST_PRICE.getBoolean() && Settings.ALLOW_USAGE_OF_BUY_NOW_SYSTEM.getBoolean() && auctionItem.getCurrentPrice() > auctionItem.getBasePrice()) {
-				auctionItem.setBasePrice(Settings.ROUND_ALL_PRICES.getBoolean() ? Math.round(auctionItem.getCurrentPrice()) : auctionItem.getCurrentPrice());
-			}
+				if (owner.isOnline()) {
+					AuctionHouse.getInstance().getLocale().getMessage("auction.placedbid")
+							.processPlaceholder("player", click.player.getName())
+							.processPlaceholder("player_displayname", AuctionAPI.getInstance().getDisplayName(click.player))
+							.processPlaceholder("amount", AuctionAPI.getInstance().formatNumber(auctionItem.getCurrentPrice()))
+							.processPlaceholder("item", AuctionAPI.getInstance().getItemName(itemStack))
+							.sendPrefixedMessage(owner.getPlayer());
+				}
 
-			if (Settings.INCREASE_TIME_ON_BID.getBoolean()) {
-				auctionItem.setExpiresAt(auctionItem.getExpiresAt() + 1000L * Settings.TIME_TO_INCREASE_BY_ON_BID.getInt());
-			}
-
-			if (Settings.BROADCAST_AUCTION_BID.getBoolean()) {
-				Bukkit.getOnlinePlayers().forEach(player -> AuctionHouse.getInstance().getLocale().getMessage("auction.broadcast.bid")
-						.processPlaceholder("player", click.player.getName())
-						.processPlaceholder("player_displayname", AuctionAPI.getInstance().getDisplayName(click.player))
-						.processPlaceholder("amount", AuctionAPI.getInstance().formatNumber(auctionItem.getCurrentPrice()))
-						.processPlaceholder("item", AuctionAPI.getInstance().getItemName(itemStack))
-						.sendPrefixedMessage(player));
-			}
-
-			if (oldBidder.isOnline()) {
-				AuctionHouse.getInstance().getLocale().getMessage("auction.outbid")
-						.processPlaceholder("player", click.player.getName())
-						.processPlaceholder("player_displayname", AuctionAPI.getInstance().getDisplayName(click.player))
-						.processPlaceholder("item", AuctionAPI.getInstance().getItemName(itemStack))
-						.sendPrefixedMessage(oldBidder.getPlayer());
-			}
-
-			if (owner.isOnline()) {
-				AuctionHouse.getInstance().getLocale().getMessage("auction.placedbid")
-						.processPlaceholder("player", click.player.getName())
-						.processPlaceholder("player_displayname", AuctionAPI.getInstance().getDisplayName(click.player))
-						.processPlaceholder("amount", AuctionAPI.getInstance().formatNumber(auctionItem.getCurrentPrice()))
-						.processPlaceholder("item", AuctionAPI.getInstance().getItemName(itemStack))
-						.sendPrefixedMessage(owner.getPlayer());
-			}
-
-			endAndReturn(click);
+				endAndReturn(click);
+			});
 		});
 	}
 

@@ -67,16 +67,18 @@ public class GUIBid extends AbstractPlaceholderGui {
 	private void draw() {
 		setItem(1, 4, this.auctionItem.getItem());
 		setButton(1, 2, ConfigurationItemHelper.createConfigurationItem(this.player, Settings.GUI_BIDDING_ITEMS_DEFAULT_ITEM.getString(), Settings.GUI_BIDDING_ITEMS_DEFAULT_NAME.getString(), Settings.GUI_BIDDING_ITEMS_DEFAULT_LORE.getStringList(), null), e -> {
-			if (Settings.PLAYER_NEEDS_TOTAL_PRICE_TO_BID.getBoolean() && !EconomyManager.hasBalance(e.player, auctionItem.getCurrentPrice() + auctionItem.getBidIncrementPrice())) {
-				AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(e.player);
-				return;
-			}
+			EconomyManager.hasBalance(e.player, auctionItem.getCurrentPrice() + auctionItem.getBidIncrementPrice()).thenAccept(success -> {
+				if (Settings.PLAYER_NEEDS_TOTAL_PRICE_TO_BID.getBoolean() && !success) {
+					AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(e.player);
+					return;
+				}
 
-			e.gui.exit();
-			// THE MINIMUM
-			final double minBid = Settings.USE_REALISTIC_BIDDING.getBoolean() ? this.auctionItem.getCurrentPrice() + this.auctionItem.getBidIncrementPrice() : this.auctionItem.getBidIncrementPrice();
+				e.gui.exit();
+				// THE MINIMUM
+				final double minBid = Settings.USE_REALISTIC_BIDDING.getBoolean() ? this.auctionItem.getCurrentPrice() + this.auctionItem.getBidIncrementPrice() : this.auctionItem.getBidIncrementPrice();
 
-			e.manager.showGUI(e.player, new GUIConfirmBid(this.auctionPlayer, auctionItem, minBid));
+				e.manager.showGUI(e.player, new GUIConfirmBid(this.auctionPlayer, auctionItem, minBid));
+			});
 		});
 
 		// TODO UPDATE BID
@@ -140,7 +142,8 @@ public class GUIBid extends AbstractPlaceholderGui {
 
 					newBiddingAmount = Settings.ROUND_ALL_PRICES.getBoolean() ? Math.round(newBiddingAmount) : newBiddingAmount;
 
-					if (Settings.PLAYER_NEEDS_TOTAL_PRICE_TO_BID.getBoolean() && !EconomyManager.hasBalance(e.player, newBiddingAmount)) {
+					// TODO: join #3
+					if (Settings.PLAYER_NEEDS_TOTAL_PRICE_TO_BID.getBoolean() && !EconomyManager.hasBalance(e.player, newBiddingAmount).join()) {
 						AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(e.player);
 						return true;
 					}
@@ -162,7 +165,8 @@ public class GUIBid extends AbstractPlaceholderGui {
 					if (Settings.BIDDING_TAKES_MONEY.getBoolean()) {
 						final double oldBidAmount = auctionItem.getCurrentPrice();
 
-						if (!EconomyManager.hasBalance(e.player, newBiddingAmount)) {
+						// TODO: join #4
+						if (!EconomyManager.hasBalance(e.player, newBiddingAmount).join()) {
 							AuctionHouse.getInstance().getLocale().getMessage("general.notenoughmoney").sendPrefixedMessage(e.player);
 							return true;
 						}
@@ -183,12 +187,24 @@ public class GUIBid extends AbstractPlaceholderGui {
 							else
 								EconomyManager.deposit(oldBidder, oldBidAmount);
 							if (oldBidder.isOnline())
-								AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(oldBidder))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(oldBidAmount)).sendPrefixedMessage(oldBidder.getPlayer());
+								EconomyManager.getBalance(oldBidder).thenAccept(balance ->
+									AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd")
+											.processPlaceholder("player_balance",
+													AuctionAPI.getInstance().formatNumber(balance))
+											.processPlaceholder("price",
+													AuctionAPI.getInstance().formatNumber(oldBidAmount))
+											.sendPrefixedMessage(oldBidder.getPlayer()));
 						}
 
-						EconomyManager.withdrawBalance(e.player, newBiddingAmount);
-						AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyremove").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(e.player))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(newBiddingAmount)).sendPrefixedMessage(e.player);
-
+						double finalNewBiddingAmount = newBiddingAmount;
+						EconomyManager.withdrawBalance(e.player, newBiddingAmount)
+							.thenCompose(x -> EconomyManager.getBalance(e.player)).thenAccept(balance ->
+									AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyremove")
+											.processPlaceholder("player_balance",
+													AuctionAPI.getInstance().formatNumber(balance))
+											.processPlaceholder("price",
+													AuctionAPI.getInstance().formatNumber(finalNewBiddingAmount))
+											.sendPrefixedMessage(e.player));
 					}
 
 					auctionItem.setHighestBidder(e.player.getUniqueId());

@@ -133,7 +133,8 @@ public class TickAuctionsTask extends BukkitRunnable {
 				double tax = Settings.TAX_ENABLED.getBoolean() ? (Settings.TAX_SALES_TAX_AUCTION_WON_PERCENTAGE.getDouble() / 100) * auctionItem.getCurrentPrice() : 0D;
 
 				if (!Settings.BIDDING_TAKES_MONEY.getBoolean())
-					if (!EconomyManager.hasBalance(auctionWinner, Settings.TAX_CHARGE_SALES_TAX_TO_BUYER.getBoolean() ? finalPrice + tax : finalPrice)) {
+					// join because we are in an async task
+					if (!EconomyManager.hasBalance(auctionWinner, Settings.TAX_CHARGE_SALES_TAX_TO_BUYER.getBoolean() ? finalPrice + tax : finalPrice).join()) {
 						if (auctionItem.isServerItem())
 							instance.getAuctionItemManager().sendToGarbage(auctionItem);
 						else
@@ -161,7 +162,13 @@ public class TickAuctionsTask extends BukkitRunnable {
 							.processPlaceholder("buyer_name", Bukkit.getOfflinePlayer(auctionItem.getHighestBidder()).getName())
 							.processPlaceholder("buyer_displayname", AuctionAPI.getInstance().getDisplayName(Bukkit.getOfflinePlayer(auctionItem.getHighestBidder())))
 							.sendPrefixedMessage(Bukkit.getOfflinePlayer(auctionItem.getOwner()).getPlayer());
-					instance.getLocale().getMessage("pricing.moneyadd").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(Bukkit.getOfflinePlayer(auctionItem.getOwner())))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(Settings.TAX_CHARGE_SALES_TAX_TO_BUYER.getBoolean() ? finalPrice : finalPrice - tax)).sendPrefixedMessage(Bukkit.getOfflinePlayer(auctionItem.getOwner()).getPlayer());
+					EconomyManager.getBalance(Bukkit.getOfflinePlayer(auctionItem.getOwner())).thenAccept(ownerBalance ->
+						instance.getLocale().getMessage("pricing.moneyadd")
+								.processPlaceholder("player_balance",
+										AuctionAPI.getInstance().formatNumber(ownerBalance))
+								.processPlaceholder("price",
+										AuctionAPI.getInstance().formatNumber(Settings.TAX_CHARGE_SALES_TAX_TO_BUYER.getBoolean() ? finalPrice
+												: finalPrice - tax)).sendPrefixedMessage(Bukkit.getOfflinePlayer(auctionItem.getOwner()).getPlayer()));
 				}
 
 				if (auctionWinner.isOnline()) {
@@ -173,7 +180,13 @@ public class TickAuctionsTask extends BukkitRunnable {
 							.sendPrefixedMessage(auctionWinner.getPlayer());
 
 					if (!Settings.BIDDING_TAKES_MONEY.getBoolean())
-						instance.getLocale().getMessage("pricing.moneyremove").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(auctionWinner.getPlayer()))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(Settings.TAX_CHARGE_SALES_TAX_TO_BUYER.getBoolean() ? finalPrice + tax : finalPrice)).sendPrefixedMessage(auctionWinner.getPlayer());
+						EconomyManager.getBalance(auctionWinner.getPlayer()).thenAccept(winnerBalance ->
+							instance.getLocale().getMessage("pricing.moneyremove")
+									.processPlaceholder("player_balance",
+											AuctionAPI.getInstance().formatNumber(winnerBalance))
+									.processPlaceholder("price",
+											AuctionAPI.getInstance().formatNumber(Settings.TAX_CHARGE_SALES_TAX_TO_BUYER.getBoolean() ?
+													finalPrice + tax : finalPrice)).sendPrefixedMessage(auctionWinner.getPlayer()));
 
 					// remove the dupe tracking
 					NBT.modify(itemStack, nbt -> {

@@ -125,7 +125,13 @@ public class GUIActiveAuctions extends AbstractPlaceholderGui {
 											EconomyManager.deposit(oldBidder, item.getCurrentPrice());
 
 										if (oldBidder.isOnline())
-											AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd").processPlaceholder("player_balance", AuctionAPI.getInstance().formatNumber(EconomyManager.getBalance(oldBidder))).processPlaceholder("price", AuctionAPI.getInstance().formatNumber(item.getCurrentPrice())).sendPrefixedMessage(oldBidder.getPlayer());
+											EconomyManager.getBalance(oldBidder).thenAccept(balance ->
+												AuctionHouse.getInstance().getLocale().getMessage("pricing.moneyadd")
+														.processPlaceholder("player_balance",
+																AuctionAPI.getInstance().formatNumber(balance))
+														.processPlaceholder("price",
+																AuctionAPI.getInstance().formatNumber(item.getCurrentPrice()))
+														.sendPrefixedMessage(oldBidder.getPlayer()));
 
 									}
 
